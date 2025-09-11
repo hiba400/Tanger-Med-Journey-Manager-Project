@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 
+import NotificationPanel from '../components/NotificationPanel';
+
 import { 
   AlertTriangle, 
   CheckCircle, 
   Clock, 
-  Users, 
+  Users,
   MapPin, 
   Phone, 
   Navigation, 
@@ -64,21 +66,23 @@ const navigateToPage = (path) => {
 };
 
 // Sidebar component (same as dashboard)
-const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) => {
+const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection, onNewRequest, onExportData }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   
   const menuItems = [
-    { id: 'dashboard', icon: BarChart3, label: 'Dashboard', badge: null, path: '/dashboard' },
-    { id: 'requests', icon: AlertTriangle, label: 'Requests', badge: '8', path: null },
-    { id: 'drivers', icon: Users, label: 'Drivers', badge: '24', path: '/pages/drivermanagement' },
+    { id: 'dashboard', icon: BarChart3, label: 'Dashboard', badge: null, path: '/pages/breakdownadmindashboard' },
+    { id: 'requests', icon: AlertTriangle, label: 'Requests', path: null },
+    { id: 'drivers', icon: Users, label: 'Drivers', path: '/pages/drivermanagement' },
     { id: 'map', icon: Map, label: 'Live Map', badge: null, path: null },
-    { id: 'analytics', icon: TrendingUp, label: 'Analytics', badge: null, path: null },
     { id: 'fleet', icon: Truck, label: 'Fleet', badge: null, path: null },
     { id: 'profil', icon: UserCheck, label: 'Profil', badge: null, path: null },
     { id: 'setting', icon: Settings, label: 'Settings', badge: null, path: null },
   ];
 
   const handleMenuClick = (item) => {
+    // Set active section for all items
+    setActiveSection(item.id);
+    
     if (item.path) {
       // Navigate to external route
       navigateToPage(item.path);
@@ -140,11 +144,11 @@ const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) =
               key={item.id}
               onClick={() => handleMenuClick(item)}
               className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                activeSection === item.id && !item.path
+                activeSection === item.id
                   ? 'text-white shadow-sm' 
                   : `${darkMode ? 'text-slate-300 hover:bg-slate-700 hover:text-white' : 'text-slate-700 hover:bg-gray-100'}`
               }`}
-              style={activeSection === item.id && !item.path ? { backgroundColor: colors.dark } : {}}
+              style={activeSection === item.id ? { backgroundColor: colors.dark } : {}}
               title={isCollapsed ? item.label : ''}
             >
               <div className="flex items-center">
@@ -153,7 +157,7 @@ const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) =
               </div>
               {!isCollapsed && item.badge && (
                 <span className={`px-2 py-0.5 text-xs rounded-full ${
-                  activeSection === item.id && !item.path
+                  activeSection === item.id
                     ? 'bg-white/20 text-white' 
                     : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
                 }`}>
@@ -176,13 +180,13 @@ const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) =
               Quick Actions
             </p>
             <div className="space-y-1">
-              <button className={`w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+              <button onClick={onNewRequest} className={`w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
                 darkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-700 hover:bg-gray-100'
               }`}>
                 <Plus className="w-5 h-5 mr-3" />
                 New Request
               </button>
-              <button className={`w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+              <button onClick={onExportData} className={`w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
                 darkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-700 hover:bg-gray-100'
               }`}>
                 <Download className="w-5 h-5 mr-3" />
@@ -197,11 +201,37 @@ const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) =
 };
 
 // Header component
-const RequestsHeader = ({ darkMode, setDarkMode, searchQuery, setSearchQuery, lastRefresh }) => {
+const RequestsHeader = ({ darkMode, setDarkMode, searchQuery, setSearchQuery, lastRefresh, onOpenNotifications }) => {
   const handleLogout = () => {
     navigateToPage('/authentication/sign-in');
   };
+  let displayName = 'Admin';
+  let avatarImage = null;
+  let currentLanguage = 'en';
+  try {
+    const storedProfile = localStorage.getItem('profileData');
+    if (storedProfile) {
+      const parsed = JSON.parse(storedProfile);
+      if (parsed && parsed.name) displayName = parsed.name;
+    }
+    const storedImg = localStorage.getItem('profileImage');
+    if (storedImg) avatarImage = storedImg;
+    const appSettings = localStorage.getItem('appSettings');
+    if (appSettings) {
+      const parsed = JSON.parse(appSettings);
+      currentLanguage = parsed?.appearance?.language || 'en';
+    }
+  } catch {}
 
+  const t = (key) => {
+    const dict = {
+      en: { title: 'Requests Management', subtitle: 'Monitor and manage all breakdown assistance requests', supervisor: 'Supervisor', logout: 'Logout', search: 'Search...' },
+      fr: { title: 'Gestion des demandes', subtitle: 'Suivre et gérer toutes les demandes', supervisor: 'Superviseur', logout: 'Déconnexion', search: 'Rechercher...' },
+      ar: { title: 'إدارة الطلبات', subtitle: 'مراقبة وإدارة جميع طلبات المساعدة', supervisor: 'مشرف', logout: 'تسجيل الخروج', search: 'بحث...' }
+    };
+    return (dict[currentLanguage] || dict.en)[key] || key;
+  };
+   
   return (
     <div className={`${
       darkMode 
@@ -214,12 +244,12 @@ const RequestsHeader = ({ darkMode, setDarkMode, searchQuery, setSearchQuery, la
             <h2 className={`text-xl font-semibold ${
               darkMode ? 'text-white' : 'text-slate-900'
             }`}>
-              Requests Management
+              {t('title')}
             </h2>
             <p className={`text-sm ${
               darkMode ? 'text-slate-400' : 'text-slate-600'
             }`}>
-              Monitor and manage all breakdown assistance requests
+              {t('subtitle')}
             </p>
           </div>
           
@@ -240,7 +270,7 @@ const RequestsHeader = ({ darkMode, setDarkMode, searchQuery, setSearchQuery, la
             }`} />
             <input
               type="text"
-              placeholder="Search..."
+              placeholder={t('search')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={`w-64 pl-10 pr-4 py-2 border rounded-lg text-sm ${
@@ -264,7 +294,7 @@ const RequestsHeader = ({ darkMode, setDarkMode, searchQuery, setSearchQuery, la
               {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
             
-            <button className={`p-2 rounded-lg transition-colors relative ${
+            <button onClick={onOpenNotifications} className={`p-2 rounded-lg transition-colors relative ${
               darkMode 
                 ? 'hover:bg-slate-700 text-slate-400 hover:text-white' 
                 : 'hover:bg-gray-100 text-slate-600 hover:text-slate-900'
@@ -281,15 +311,19 @@ const RequestsHeader = ({ darkMode, setDarkMode, searchQuery, setSearchQuery, la
             <div className="text-right">
               <p className={`text-sm font-medium ${
                 darkMode ? 'text-white' : 'text-slate-900'
-              }`}>Admin</p>
+              }`}>{displayName}</p>
               <p className={`text-xs ${
                 darkMode ? 'text-slate-400' : 'text-slate-500'
-              }`}>Supervisor</p>
+              }`}>{t('supervisor')}</p>
             </div>
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm font-medium" style={{
+            <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center text-white text-sm font-medium" style={{
               backgroundColor: colors.dark
             }}>
-              AD
+              {avatarImage ? (
+                <img src={avatarImage} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                displayName.split(' ').map(n => n[0]).join('')
+              )}
             </div>
             
             {/* Logout Button */}
@@ -298,7 +332,7 @@ const RequestsHeader = ({ darkMode, setDarkMode, searchQuery, setSearchQuery, la
               className="px-4 py-2 rounded-lg border border-white/30 text-white hover:bg-white/10 transition-all duration-300 hover:scale-105 hover:border-blue-300 hover:shadow-lg hover:shadow-blue-300/20" 
               style={{ backgroundColor: colors.dark }}
             > 
-              Logout
+              {t('logout')}
             </button>
           </div>
         </div>
@@ -428,7 +462,7 @@ const QuickActionsModal = ({ darkMode, requests, setRequests, availableDrivers }
                           {request.customer} - {request.type}
                         </span>
                         <span className="px-2 py-0.5 text-xs font-medium rounded-full text-white" style={{
-                          backgroundColor: request.status === 'urgent' ? '#EF4444' : '#F59E0B'
+                          backgroundColor: request.status === 'urgent' ? '#FFFFF' : '#F59E0B'
                         }}>
                           {request.status}
                         </span>
@@ -505,6 +539,7 @@ const RequestsManagement = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [editingRequest, setEditingRequest] = useState(null);
   const [selectedRequests, setSelectedRequests] = useState([]);
@@ -513,6 +548,73 @@ const RequestsManagement = () => {
   const [sortOrder, setSortOrder] = useState('desc');
   const [activeSection, setActiveSection] = useState('requests');
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
+
+  const exportRequestsToFile = () => {
+    try {
+      const dataStr = JSON.stringify(requests, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `requests_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('Failed to export data');
+    }
+  };
+
+  // Handle cross-page quick action flags
+  useEffect(() => {
+    try {
+      const shouldOpen = localStorage.getItem('openNewRequest');
+      if (shouldOpen === 'true') {
+        setIsNewRequestOpen(true);
+        localStorage.removeItem('openNewRequest');
+      }
+      const shouldExport = localStorage.getItem('exportRequests');
+      if (shouldExport === 'true') {
+        exportRequestsToFile();
+        localStorage.removeItem('exportRequests');
+      }
+    } catch {}
+  }, []);
+  
+  // Load theme from settings and sync on changes
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('appSettings');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const theme = parsed?.appearance?.theme || 'auto';
+        if (theme === 'auto') {
+          const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          setDarkMode(prefersDark);
+        } else {
+          setDarkMode(theme === 'dark');
+        }
+      }
+    } catch {}
+    const onStorage = (e) => {
+      if (e.key === 'appSettings' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          const theme = parsed?.appearance?.theme || 'auto';
+          if (theme === 'auto') {
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            setDarkMode(prefersDark);
+          } else {
+            setDarkMode(theme === 'dark');
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const [requests, setRequests] = useState([
     {
@@ -732,6 +834,7 @@ const RequestsManagement = () => {
   };
 
   return (
+    <>
     <div className={`min-h-screen transition-all duration-300 ${
       darkMode ? 'bg-slate-900' : 'bg-gray-50'
     }`}>
@@ -741,6 +844,8 @@ const RequestsManagement = () => {
           setActiveSection={setActiveSection}
           darkMode={darkMode}
           switchSection={switchSection}
+          onNewRequest={() => setIsNewRequestOpen(true)}
+          onExportData={exportRequestsToFile}
         />
         
         <div className="flex-1">
@@ -750,6 +855,7 @@ const RequestsManagement = () => {
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             lastRefresh={lastRefresh}
+            onOpenNotifications={() => setIsNotificationPanelOpen(true)}
           />
           
           <div className="p-6">
@@ -1189,13 +1295,129 @@ const RequestsManagement = () => {
         availableDrivers={availableDrivers}
       />
 
-      {/* Floating Action Button */}
-      <div className="fixed bottom-6 right-6 z-30">
-        <button className="w-12 h-12 rounded-lg shadow-lg flex items-center justify-center text-white hover:shadow-xl transition-shadow" style={{
-          backgroundColor: colors.dark
-        }}>
-          <Plus className="w-5 h-5" />
-        </button>
+      {/* New Request Modal */}
+      {isNewRequestOpen && (
+        <NewRequestModal 
+          darkMode={darkMode}
+          onClose={() => setIsNewRequestOpen(false)}
+          onSubmit={(form) => {
+            const newId = Math.max(0, ...requests.map(r => r.id || 0)) + 1;
+            const now = new Date();
+            const newReq = {
+              id: newId,
+              customer: form.customer,
+              phone: form.phone,
+              location: form.location,
+              coordinates: { lat: 0, lng: 0 },
+              time: 'now',
+              timestamp: now,
+              status: form.status || 'pending',
+              priority: form.priority || 'medium',
+              type: form.type || 'Engine Failure',
+              description: form.description || '',
+              estimatedCost: form.estimatedCost ? Number(form.estimatedCost) : 0,
+              assignedDriver: null,
+              vehicleInfo: {
+                make: form.vehicleMake || '',
+                model: form.vehicleModel || '',
+                year: form.vehicleYear ? Number(form.vehicleYear) : undefined,
+                plate: form.vehiclePlate || ''
+              }
+            };
+            setRequests([newReq, ...requests]);
+            setIsNewRequestOpen(false);
+          }}
+        />
+      )}
+
+      
+    </div>
+    {/* Notification Panel */}
+    <NotificationPanel 
+      isOpen={isNotificationPanelOpen}
+      onClose={() => setIsNotificationPanelOpen(false)}
+      darkMode={darkMode}
+    />
+    </>
+  );
+};
+
+// Simple New Request Modal
+const NewRequestModal = ({ darkMode, onClose, onSubmit }) => {
+  const [form, setForm] = useState({
+    customer: '',
+    phone: '',
+    location: '',
+    type: 'Engine Failure',
+    priority: 'medium',
+    description: '',
+    estimatedCost: '',
+    vehicleMake: '',
+    vehicleModel: '',
+    vehicleYear: '',
+    vehiclePlate: '',
+    status: 'pending'
+  });
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className={`${darkMode ? 'bg-slate-800' : 'bg-white'} rounded-xl shadow-xl w-full max-w-xl`}>
+        <div className="flex items-center justify-between p-4 border-b ${darkMode ? 'border-slate-700' : 'border-gray-200'}">
+          <h3 className={`${darkMode ? 'text-white' : 'text-slate-900'} text-lg font-semibold`}>New Request</h3>
+          <button onClick={onClose} className={`p-2 rounded ${darkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-slate-500'}`}>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[
+            { key: 'customer', label: 'Customer' },
+            { key: 'phone', label: 'Phone' },
+            { key: 'location', label: 'Location' },
+            { key: 'vehicleMake', label: 'Vehicle Make' },
+            { key: 'vehicleModel', label: 'Vehicle Model' },
+            { key: 'vehicleYear', label: 'Vehicle Year' },
+            { key: 'vehiclePlate', label: 'Vehicle Plate' }
+          ].map(f => (
+            <div key={f.key}>
+              <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{f.label}</label>
+              <input
+                type="text"
+                value={form[f.key]}
+                onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                className={`w-full px-3 py-2 border rounded ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-gray-300 text-slate-900'}`}
+              />
+            </div>
+          ))}
+          <div>
+            <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>Type</label>
+            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className={`w-full px-3 py-2 border rounded ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-gray-300 text-slate-900'}`}>
+              <option>Engine Failure</option>
+              <option>Flat Tire</option>
+              <option>Battery Dead</option>
+              <option>Fuel Empty</option>
+              <option>Overheating</option>
+            </select>
+          </div>
+          <div>
+            <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>Priority</label>
+            <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className={`w-full px-3 py-2 border rounded ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-gray-300 text-slate-900'}`}>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div>
+            <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>Estimated Cost</label>
+            <input type="number" value={form.estimatedCost} onChange={(e) => setForm({ ...form, estimatedCost: e.target.value })} className={`w-full px-3 py-2 border rounded ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-gray-300 text-slate-900'}`} />
+          </div>
+          <div className="md:col-span-2">
+            <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>Description</label>
+            <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={`w-full px-3 py-2 border rounded ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-gray-300 text-slate-900'}`}/>
+          </div>
+        </div>
+        <div className="p-4 flex items-center justify-end space-x-3 border-t ${darkMode ? 'border-slate-700' : 'border-gray-200'}">
+          <button onClick={onClose} className={`px-4 py-2 rounded ${darkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-gray-200 text-slate-700 hover:bg-gray-300'}`}>Cancel</button>
+          <button onClick={() => onSubmit(form)} className="px-4 py-2 rounded text-white" style={{ backgroundColor: colors.dark }}>Create</button>
+        </div>
       </div>
     </div>
   );

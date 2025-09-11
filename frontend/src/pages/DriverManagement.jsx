@@ -51,6 +51,7 @@ import {
   Minimize2,
   Layers
 } from 'lucide-react';
+import NotificationPanel from '../components/NotificationPanel';
 
 // Professional color palette (matching the dashboard)
 const colors = {
@@ -86,8 +87,33 @@ const DashboardLayout = ({ children, darkMode }) => {
   );
 };
 
-const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefresh }) => {
-  const [searchValue, setSearchValue] = useState('');
+const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefresh, searchValue, onSearchChange, onOpenNotifications }) => {
+  let displayName = 'Admin';
+  let avatarImage = null;
+  let currentLanguage = 'en';
+  try {
+    const storedProfile = localStorage.getItem('profileData');
+    if (storedProfile) {
+      const parsed = JSON.parse(storedProfile);
+      if (parsed && parsed.name) displayName = parsed.name;
+    }
+    const storedImg = localStorage.getItem('profileImage');
+    if (storedImg) avatarImage = storedImg;
+    const appSettings = localStorage.getItem('appSettings');
+    if (appSettings) {
+      const parsed = JSON.parse(appSettings);
+      currentLanguage = parsed?.appearance?.language || 'en';
+    }
+  } catch {}
+
+  const t = (key) => {
+    const dict = {
+      en: { title: 'Driver Management', subtitle: 'Manage and monitor your breakdown assistance team', supervisor: 'Supervisor', logout: 'Logout' },
+      fr: { title: 'Gestion des conducteurs', subtitle: "Gérer et suivre l'équipe d'assistance", supervisor: 'Superviseur', logout: 'Déconnexion' },
+      ar: { title: 'إدارة السائقين', subtitle: 'إدارة ومراقبة فريق المساعدة على الأعطال', supervisor: 'مشرف', logout: 'تسجيل الخروج' }
+    };
+    return (dict[currentLanguage] || dict.en)[key] || key;
+  };
 
   const handleLogout = () => {
     // Handle logout functionality
@@ -106,12 +132,12 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
             <h2 className={`text-xl font-semibold ${
               darkMode ? 'text-white' : 'text-slate-900'
             }`}>
-              Driver Management
+              {t('title')}
             </h2>
             <p className={`text-sm ${
               darkMode ? 'text-slate-400' : 'text-slate-600'
             }`}>
-              Manage and monitor your breakdown assistance team
+              {t('subtitle')}
             </p>
           </div>
           
@@ -134,7 +160,7 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
               type="text"
               placeholder="Search..."
               value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
+              onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
               className={`w-64 pl-10 pr-4 py-2 border rounded-lg text-sm ${
                 darkMode 
                   ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400' 
@@ -168,7 +194,7 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
               {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
             
-            <button className={`p-2 rounded-lg transition-colors relative ${
+            <button onClick={onOpenNotifications} className={`p-2 rounded-lg transition-colors relative ${
               darkMode 
                 ? 'hover:bg-slate-700 text-slate-400 hover:text-white' 
                 : 'hover:bg-gray-100 text-slate-600 hover:text-slate-900'
@@ -185,15 +211,19 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
             <div className="text-right">
               <p className={`text-sm font-medium ${
                 darkMode ? 'text-white' : 'text-slate-900'
-              }`}>Admin</p>
+              }`}>{displayName}</p>
               <p className={`text-xs ${
                 darkMode ? 'text-slate-400' : 'text-slate-500'
-              }`}>Supervisor</p>
+              }`}>{t('supervisor')}</p>
             </div>
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm font-medium" style={{
+            <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center text-white text-sm font-medium" style={{
               backgroundColor: colors.dark
             }}>
-              AD
+              {avatarImage ? (
+                <img src={avatarImage} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                displayName.split(' ').map(n => n[0]).join('')
+              )}
             </div>
             
             {/* Logout Button */}
@@ -202,7 +232,7 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
               className="px-4 py-2 rounded-lg border border-white/30 text-white hover:bg-white/10 transition-all duration-300 hover:scale-105 hover:border-blue-300 hover:shadow-lg hover:shadow-blue-300/20" 
               style={{ backgroundColor: colors.dark }}
             > 
-              Logout
+              {t('logout')}
             </button>
           </div>
         </div>
@@ -221,20 +251,24 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
 
 const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  
   const menuItems = [
-    { id: 'dashboard', icon: BarChart3, label: 'Dashboard', badge: null, path: '/' },
-    { id: 'requests', icon: AlertTriangle, label: 'Requests', badge: '8', path: '/pages/requestmanagement' },
-    { id: 'drivers', icon: Users, label: 'Drivers', badge: '24', path: null },
-    { id: 'map', icon: Map, label: 'Live Map', badge: null, path: '/' },
-    { id: 'analytics', icon: TrendingUp, label: 'Analytics', badge: null, path: null },
-    { id: 'fleet', icon: Truck, label: 'Fleet', badge: null, path: null },
-    { id: 'profil', icon: UserCheck, label: 'Profil', badge: null, path: null },
-    { id: 'setting', icon: Settings, label: 'Settings', badge: null, path: null },
-  ];
+      { id: 'dashboard', icon: BarChart3, label: 'Dashboard', badge: null, path: '/pages/breakdownadmindashboard' },
+      { id: 'requests', icon: AlertTriangle, label: 'Requests', badge: '8', path: '/pages/requestManagement' },
+      { id: 'drivers', icon: Users, label: 'Drivers', badge: '24', path: '/pages/driverManagement' },
+      { id: 'map', icon: Map, label: 'Live Map', badge: null, path: '/pages/breakdownadmindashboard' },
+      { id: 'Trucks', icon: Truck, label: 'Trucks', badge: null, path: '/pages/truckManagement' },
+      { id: 'profil', icon: UserCheck, label: 'Profil', badge: null, path: '/pages/profil' },
+      { id: 'setting', icon: Settings, label: 'Settings', badge: null, path: '/pages/settings' },
+    ];
 
   const handleMenuClick = (item) => {
+    // Set active section for all items
+    setActiveSection(item.id);
+    
     if (item.path) {
+      if (item.id === 'map') {
+        try { localStorage.setItem('openMapSection', 'true'); } catch {}
+      }
       // Navigate to external route
       navigateToPage(item.path);
     } else {
@@ -295,11 +329,11 @@ const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) =
               key={item.id}
               onClick={() => handleMenuClick(item)}
               className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                activeSection === item.id && !item.path
+                activeSection === item.id
                   ? 'text-white shadow-sm' 
                   : `${darkMode ? 'text-slate-300 hover:bg-slate-700 hover:text-white' : 'text-slate-700 hover:bg-gray-100'}`
               }`}
-              style={activeSection === item.id && !item.path ? { backgroundColor: colors.dark } : {}}
+              style={activeSection === item.id ? { backgroundColor: colors.dark } : {}}
               title={isCollapsed ? item.label : ''}
             >
               <div className="flex items-center">
@@ -308,7 +342,7 @@ const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) =
               </div>
               {!isCollapsed && item.badge && (
                 <span className={`px-2 py-0.5 text-xs rounded-full ${
-                  activeSection === item.id && !item.path
+                  activeSection === item.id
                     ? 'bg-white/20 text-white' 
                     : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
                 }`}>
@@ -460,13 +494,18 @@ const mockDrivers = [
   }
 ];
 
-const DriverManagement = ({ darkMode = false }) => {
+const DriverManagement = ({ darkMode = false, searchTerm, onSearchTermChange, refreshKey }) => {
   const [drivers, setDrivers] = useState(mockDrivers);
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [editingDriver, setEditingDriver] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  // Simulate data refresh when refreshKey changes (placeholder for API fetch)
+  useEffect(() => {
+    setDrivers(prev => [...prev]);
+  }, [refreshKey]);
 
   // Filter drivers based on search and status
   const filteredDrivers = drivers.filter(driver => {
@@ -588,7 +627,7 @@ const DriverManagement = ({ darkMode = false }) => {
       {/* Actions Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <button className="px-4 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-all duration-300 hover:scale-105 hover:shadow-lg flex items-center space-x-2 transform"
+          <button onClick={() => setIsAddModalOpen(true)} className="px-4 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-all duration-300 hover:scale-105 hover:shadow-lg flex items-center space-x-2 transform"
                   style={{ backgroundColor: colors.dark }}>
             <UserPlus className="w-4 h-4 transition-transform duration-300 hover:scale-110" />
             <span>Add Driver</span>
@@ -604,7 +643,7 @@ const DriverManagement = ({ darkMode = false }) => {
               type="text"
               placeholder="Search drivers..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => onSearchTermChange ? onSearchTermChange(e.target.value) : undefined}
               className={`w-full pl-10 pr-4 py-2 border rounded-lg text-sm ${
                 darkMode 
                   ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400' 
@@ -1091,6 +1130,83 @@ const DriverManagement = ({ darkMode = false }) => {
   };
 
   // Delete Confirmation Modal
+  // Add Driver Modal
+  const AddDriverModal = ({ onSave, onClose, darkMode }) => {
+    const [formData, setFormData] = useState({
+      name: '',
+      email: '',
+      phone: '',
+      status: 'available',
+      location: ''
+    });
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      const baseDriver = {
+        rating: 4.5,
+        completedToday: 0,
+        totalCompleted: 0,
+        license: '',
+        specializations: [],
+        vehicle: {
+          type: 'Service Van',
+          model: 'Unknown',
+          plate: 'N/A',
+          fuel: 100,
+          battery: 100
+        }
+      };
+      onSave({ ...baseDriver, ...formData });
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className={`${darkMode ? 'bg-slate-800' : 'bg-white'} rounded-lg shadow-xl w-full max-w-lg`}>
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-700">
+            <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-slate-900'}`}>Add Driver</h2>
+            <button onClick={onClose} className={`p-2 rounded-lg ${darkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-gray-100 text-slate-500'}`}>
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>Name</label>
+              <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className={`w-full px-3 py-2 border rounded-lg ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-gray-300 text-slate-900'} focus:outline-none focus:ring-2 focus:ring-blue-500`} />
+            </div>
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>Email</label>
+              <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className={`w-full px-3 py-2 border rounded-lg ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-gray-300 text-slate-900'} focus:outline-none focus:ring-2 focus:ring-blue-500`} />
+            </div>
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>Phone</label>
+              <input type="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} className={`w-full px-3 py-2 border rounded-lg ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-gray-300 text-slate-900'} focus:outline-none focus:ring-2 focus:ring-blue-500`} />
+            </div>
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>Status</label>
+              <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })} className={`w-full px-3 py-2 border rounded-lg ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-gray-300 text-slate-900'} focus:outline-none focus:ring-2 focus:ring-blue-500`}>
+                <option value="available">Available</option>
+                <option value="busy">Busy</option>
+                <option value="offline">Offline</option>
+              </select>
+            </div>
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>Location</label>
+              <input type="text" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className={`w-full px-3 py-2 border rounded-lg ${darkMode ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white border-gray-300 text-slate-900'} focus:outline-none focus:ring-2 focus:ring-blue-500`} />
+            </div>
+            <div className="flex items-center space-x-3 pt-4">
+              <button type="submit" className="flex-1 px-4 py-2 text-white rounded-lg font-medium hover:opacity-90 transition-opacity" style={{ backgroundColor: colors.dark }}>
+                <Save className="w-4 h-4" />
+                <span className="ml-2">Add Driver</span>
+              </button>
+              <button type="button" onClick={onClose} className={`${darkMode ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-gray-200 text-slate-700 hover:bg-gray-300'} px-4 py-2 rounded-lg font-medium`}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
   const DeleteConfirmModal = ({ driverId, onConfirm, onCancel }) => {
     if (!driverId) return null;
 
@@ -1224,6 +1340,17 @@ const DriverManagement = ({ darkMode = false }) => {
       )}
 
       {/* Modals */}
+      {isAddModalOpen && (
+        <AddDriverModal 
+          onSave={(newDriver) => {
+            const newId = drivers.reduce((maxId, d) => Math.max(maxId, d.id), 0) + 1;
+            setDrivers([{ ...newDriver, id: newId }, ...drivers]);
+            setIsAddModalOpen(false);
+          }}
+          onClose={() => setIsAddModalOpen(false)}
+          darkMode={darkMode}
+        />
+      )}
       {selectedDriver && (
         <DriverDetailModal 
           driver={selectedDriver} 
@@ -1256,12 +1383,49 @@ export default function DriverManagementApp() {
   const [darkMode, setDarkMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(Date.now());
+
+  // Load persisted theme on mount and listen for changes
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('appSettings');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const theme = parsed?.appearance?.theme || 'auto';
+        if (theme === 'auto') {
+          const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          setDarkMode(prefersDark);
+        } else {
+          setDarkMode(theme === 'dark');
+        }
+      }
+    } catch {}
+    const onStorage = (e) => {
+      if (e.key === 'appSettings' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          const theme = parsed?.appearance?.theme || 'auto';
+          if (theme === 'auto') {
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            setDarkMode(prefersDark);
+          } else {
+            setDarkMode(theme === 'dark');
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const handleRefresh = async () => {
     setIsLoading(true);
     await new Promise(resolve => setTimeout(resolve, 1000));
     setIsLoading(false);
     setLastRefresh(new Date());
+    setRefreshKey(Date.now());
   };
 
   const switchSection = async (section) => {
@@ -1286,22 +1450,27 @@ export default function DriverManagementApp() {
             onRefresh={handleRefresh}
             isLoading={isLoading}
             lastRefresh={lastRefresh}
+            searchValue={searchTerm}
+            onSearchChange={setSearchTerm}
+            onOpenNotifications={() => setIsNotificationPanelOpen(true)}
           />
           
           <div className="p-6">
-            <DriverManagement darkMode={darkMode} />
+            <DriverManagement 
+              darkMode={darkMode} 
+              searchTerm={searchTerm}
+              onSearchTermChange={setSearchTerm}
+              refreshKey={refreshKey}
+            />
           </div>
         </div>
       </div>
+      <NotificationPanel 
+        isOpen={isNotificationPanelOpen}
+        onClose={() => setIsNotificationPanelOpen(false)}
+        darkMode={darkMode}
+      />
       
-      {/* Floating Action Button */}
-      <div className="fixed bottom-6 right-6 z-30">
-        <button className="w-12 h-12 rounded-lg shadow-lg flex items-center justify-center text-white hover:shadow-xl transition-shadow" style={{
-          backgroundColor: colors.dark
-        }}>
-          <Plus className="w-5 h-5" />
-        </button>
-      </div>
     </DashboardLayout>
   );
 }

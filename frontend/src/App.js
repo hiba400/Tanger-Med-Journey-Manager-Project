@@ -7,20 +7,30 @@ import BreakdownAdminDashboard from './pages/BreakdownAdminDashboard'; // ✅ Co
 
 import DriverManagement from './pages/DriverManagement'; // ✅ Correct path
 import RequestsManagement from './pages/RequestManagement';
+import TruckManagement from './pages/TruckManagement';
+import Profile from './pages/Profile';
+import SettingsPage from './pages/Settings';
+import { AuthProvider } from './contexts/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/authentication/sign-in" element={<Login />} />
-        <Route path="/pages/home" element={<Home />} />
-        <Route path="/pages/driverManagement" element={<DriverManagement />} />
-        <Route path="/pages/requestManagement" element={<RequestsManagement />} />
-        <Route path="/pages/breakdownadmindashboard" element={<BreakdownAdminDashboard />} />
-        {/* Add more routes here as needed */}
-      </Routes>
-    </Router>
+    <AuthProvider>
+      <Router>
+        <Routes>
+          <Route path="/" element={<Login />} />
+          <Route path="/authentication/sign-in" element={<Login />} />
+                  <Route path="/pages/home" element={<Home />} />
+        <Route path="/pages/driverManagement" element={<ProtectedRoute><DriverManagement /></ProtectedRoute>} />
+        <Route path="/pages/requestManagement" element={<ProtectedRoute><RequestsManagement /></ProtectedRoute>} />
+        <Route path="/pages/truckManagement" element={<ProtectedRoute><TruckManagement /></ProtectedRoute>} />
+        <Route path="/pages/profil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="/pages/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+        <Route path="/pages/breakdownadmindashboard" element={<ProtectedRoute><BreakdownAdminDashboard /></ProtectedRoute>} />
+          {/* Add more routes here as needed */}
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 }
 

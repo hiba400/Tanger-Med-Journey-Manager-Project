@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import NotificationPanel from '../components/NotificationPanel';
 
 import { 
   Car, 
@@ -79,8 +82,13 @@ const DashboardLayout = ({ children, darkMode }) => {
 const TangerMedMap = ({ requests, darkMode, isFullscreen, onToggleFullscreen }) => {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [mapView, setMapView] = useState('satellite');
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [isMapReady, setIsMapReady] = useState(false);
   const mapContainerRef = React.useRef(null);
   const mapRef = React.useRef(null);
+  const userMarkerRef = React.useRef(null);
+  const accuracyCircleRef = React.useRef(null);
+  const watchIdRef = React.useRef(null);
 
   // Tanger Med Port coordinates
   const tangerMedCenter = [35.8869, -5.4200];
@@ -122,6 +130,10 @@ const TangerMedMap = ({ requests, darkMode, isFullscreen, onToggleFullscreen }) 
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js';
         script.onload = initializeMap;
+        script.onerror = () => {
+          // eslint-disable-next-line no-alert
+          alert('Failed to load map library. Check your internet connection or CDN access.');
+        };
         document.head.appendChild(script);
       } else {
         initializeMap();
@@ -250,15 +262,24 @@ const TangerMedMap = ({ requests, darkMode, isFullscreen, onToggleFullscreen }) 
       });
 
       mapRef.current = map;
+      setIsMapReady(true);
     };
 
     loadLeaflet();
 
     return () => {
+      // Stop follow if active
+      try { if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current); } catch {}
+      watchIdRef.current = null;
+      setIsFollowing(false);
+      // Remove markers/circles
       if (mapRef.current) {
+        try { if (userMarkerRef.current) mapRef.current.removeLayer(userMarkerRef.current); } catch {}
+        try { if (accuracyCircleRef.current) mapRef.current.removeLayer(accuracyCircleRef.current); } catch {}
         mapRef.current.remove();
         mapRef.current = null;
       }
+      setIsMapReady(false);
     };
   }, []);
 
@@ -297,6 +318,114 @@ const TangerMedMap = ({ requests, darkMode, isFullscreen, onToggleFullscreen }) 
     }
   }, []);
 
+  const locateMe = () => {
+    if (!isMapReady || !mapRef.current || !window.L) {
+      // eslint-disable-next-line no-alert
+      alert('Map is not ready yet. Please wait a moment.');
+      return;
+    }
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        if (!mapRef.current || !window.L) return;
+        const map = mapRef.current;
+        map.setView([latitude, longitude], 16, { animate: true });
+        // Remove previous marker
+        if (userMarkerRef.current) {
+          map.removeLayer(userMarkerRef.current);
+          userMarkerRef.current = null;
+        }
+        if (accuracyCircleRef.current) {
+          map.removeLayer(accuracyCircleRef.current);
+          accuracyCircleRef.current = null;
+        }
+        // Add a marker/circle for user location
+        const marker = window.L.circleMarker([latitude, longitude], {
+          radius: 8,
+          color: '#3B82F6',
+          fillColor: '#3B82F6',
+          fillOpacity: 0.9
+        }).addTo(map).bindPopup('<b>You are here</b>');
+        userMarkerRef.current = marker;
+        // Accuracy circle (approx radius 30m if accuracy missing)
+        const accuracy = pos.coords.accuracy || 30;
+        const circle = window.L.circle([latitude, longitude], { radius: accuracy, color: '#3B82F6', fillColor: '#3B82F6', fillOpacity: 0.15 });
+        circle.addTo(map);
+        accuracyCircleRef.current = circle;
+      },
+      (err) => {
+        console.error('Geolocation error:', err);
+        alert('Unable to retrieve your location. Please allow location access.');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  const toggleFollow = () => {
+    if (!isMapReady || !mapRef.current || !window.L) {
+      // eslint-disable-next-line no-alert
+      alert('Map is not ready yet. Please wait a moment.');
+      return;
+    }
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser');
+      return;
+    }
+    if (isFollowing) {
+      // Stop watching
+      try { if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current); } catch {}
+      watchIdRef.current = null;
+      setIsFollowing(false);
+      return;
+    }
+    // Start watching
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        if (!mapRef.current || !window.L) return;
+        const map = mapRef.current;
+        map.setView([latitude, longitude], Math.max(15, map.getZoom()), { animate: true });
+        if (userMarkerRef.current) map.removeLayer(userMarkerRef.current);
+        if (accuracyCircleRef.current) map.removeLayer(accuracyCircleRef.current);
+        userMarkerRef.current = window.L.circleMarker([latitude, longitude], {
+          radius: 8,
+          color: '#10B981',
+          fillColor: '#10B981',
+          fillOpacity: 0.9
+        }).addTo(map);
+        accuracyCircleRef.current = window.L.circle([latitude, longitude], {
+          radius: accuracy || 25,
+          color: '#10B981',
+          fillColor: '#10B981',
+          fillOpacity: 0.12
+        }).addTo(map);
+      },
+      (err) => {
+        console.error('watchPosition error:', err);
+        const code = err && err.code;
+        if (code === 1) {
+          alert('Location permission denied. Please allow location access in your browser settings.');
+        } else if (code === 2) {
+          alert('Position unavailable. Check your device location settings.');
+        } else if (code === 3) {
+          alert('Location request timed out. Try again.');
+        } else {
+          alert('Unable to track your position.');
+        }
+        try { if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current); } catch {}
+        watchIdRef.current = null;
+        setIsFollowing(false);
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }
+    );
+    watchIdRef.current = id;
+    setIsFollowing(true);
+  };
+
   return (
     <div className={`${isFullscreen ? 'fixed inset-0 z-50' : 'h-96'} ${
       darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'
@@ -334,6 +463,26 @@ const TangerMedMap = ({ requests, darkMode, isFullscreen, onToggleFullscreen }) 
             <option value="satellite">Satellite</option>
             <option value="street">Street</option>
           </select>
+          <button
+            onClick={locateMe}
+            className={`px-2 py-1 rounded text-xs border ${
+              darkMode ? 'bg-slate-600 border-slate-500 text-white hover:bg-slate-500' : 'bg-white border-gray-300 text-slate-700 hover:bg-gray-100'
+            } ${!isMapReady ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!isMapReady}
+            title="Locate Me"
+          >
+            Locate Me
+          </button>
+          <button
+            onClick={toggleFollow}
+            className={`px-2 py-1 rounded text-xs border ${
+              darkMode ? 'bg-slate-600 border-slate-500 text-white hover:bg-slate-500' : 'bg-white border-gray-300 text-slate-700 hover:bg-gray-100'
+            } ${!isMapReady ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!isMapReady}
+            title="Follow Me"
+          >
+            {isFollowing ? 'Stop Follow' : 'Follow Me'}
+          </button>
           
           <button
             onClick={onToggleFullscreen}
@@ -350,11 +499,83 @@ const TangerMedMap = ({ requests, darkMode, isFullscreen, onToggleFullscreen }) 
 
       {/* Map Container */}
       <div className="relative h-full">
-        <div 
-          ref={mapContainerRef}
-          className="w-full h-full"
-          style={{ minHeight: '300px' }}
-        />
+          {/* Search box */}
+          <div className="absolute top-3 left-4 z-[1000]">
+            <form onSubmit={(e)=>{
+              e.preventDefault();
+              const input = e.currentTarget.querySelector('input');
+              const q = input ? input.value.trim() : '';
+              if (!q) return;
+              // Simple geocoding using Nominatim
+              fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`)
+                .then(r=>r.json())
+                .then(results=>{
+                  if (!results || results.length===0) { alert('Location not found'); return; }
+                  const { lat, lon } = results[0];
+                  if (mapRef.current) {
+                    mapRef.current.setView([parseFloat(lat), parseFloat(lon)], 15, { animate: true });
+                  }
+                })
+                .catch(()=>alert('Geocoding failed'));
+            }}>
+              <input
+                type="text"
+                placeholder="Search location..."
+                className={`px-3 py-1.5 rounded border text-sm ${darkMode ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400' : 'bg-white border-gray-300 text-slate-800 placeholder-slate-500'}`}
+                style={{ minWidth: 220 }}
+              />
+            </form>
+          </div>
+          
+          {/* Custom Zoom Controls */}
+          <div className="absolute top-3 right-4 z-[1000]">
+            <div className={`flex flex-col border rounded-lg overflow-hidden shadow-lg ${
+              darkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-gray-300'
+            }`}>
+              <button
+                onClick={() => {
+                  if (mapRef.current) {
+                    const currentZoom = mapRef.current.getZoom();
+                    const newZoom = Math.min(currentZoom + 1, 19);
+                    mapRef.current.setZoom(newZoom);
+                    console.log('Zoom in clicked, new zoom:', newZoom);
+                  }
+                }}
+                className={`px-3 py-2 text-sm font-bold border-b ${
+                  darkMode 
+                    ? 'bg-slate-700 border-slate-600 text-white hover:bg-slate-600' 
+                    : 'bg-gray-50 border-gray-300 text-slate-700 hover:bg-gray-100'
+                } transition-colors`}
+                title="Zoom In (+)"
+              >
+                +
+              </button>
+              <button
+                onClick={() => {
+                  if (mapRef.current) {
+                    const currentZoom = mapRef.current.getZoom();
+                    const newZoom = Math.max(currentZoom - 1, 3);
+                    mapRef.current.setZoom(newZoom);
+                    console.log('Zoom out clicked, new zoom:', newZoom);
+                  }
+                }}
+                className={`px-3 py-2 text-sm font-bold ${
+                  darkMode 
+                    ? 'bg-slate-700 border-slate-600 text-white hover:bg-slate-600' 
+                    : 'bg-gray-50 border-gray-300 text-slate-700 hover:bg-gray-100'
+                } transition-colors`}
+                title="Zoom Out (-)"
+              >
+                −
+              </button>
+            </div>
+          </div>
+          
+          <div 
+            ref={mapContainerRef}
+            className="w-full h-full"
+            style={{ minHeight: '300px' }}
+          />
 
         {/* Legend */}
         <div className={`absolute bottom-4 left-4 ${
@@ -396,12 +617,39 @@ const TangerMedMap = ({ requests, darkMode, isFullscreen, onToggleFullscreen }) 
   );
 };
 
-const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefresh }) => {
-  const [searchValue, setSearchValue] = useState('');
+const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefresh, admin, onOpenNotifications, searchValue, onSearchChange }) => {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+  let displayName = admin ? admin.name : 'Admin';
+  let avatarImage = null;
+  let currentLanguage = 'en';
+  try {
+    const storedProfile = localStorage.getItem('profileData');
+    if (storedProfile) {
+      const parsed = JSON.parse(storedProfile);
+      if (parsed && parsed.name) displayName = parsed.name;
+    }
+    const storedImg = localStorage.getItem('profileImage');
+    if (storedImg) avatarImage = storedImg;
+    const appSettings = localStorage.getItem('appSettings');
+    if (appSettings) {
+      const parsed = JSON.parse(appSettings);
+      currentLanguage = parsed?.appearance?.language || 'en';
+    }
+  } catch {}
+
+  const t = (key) => {
+    const dict = {
+      en: { controlCenter: 'Control Center', breakdownDashboard: 'Breakdown Assistance Dashboard', supervisor: 'Supervisor', logout: 'Logout' },
+      fr: { controlCenter: 'Centre de contrôle', breakdownDashboard: 'Tableau de bord d’assistance', supervisor: 'Superviseur', logout: 'Déconnexion' },
+      ar: { controlCenter: 'مركز التحكم', breakdownDashboard: 'لوحة مساعدة الأعطال', supervisor: 'مشرف', logout: 'تسجيل الخروج' }
+    };
+    return (dict[currentLanguage] || dict.en)[key] || key;
+  };
 
   const handleLogout = () => {
-    // Handle logout functionality
-    navigateToPage('/authentication/sign-in');
+    logout();
+    navigate('/authentication/sign-in');
   };
 
   
@@ -417,12 +665,12 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
             <h2 className={`text-xl font-semibold ${
               darkMode ? 'text-white' : 'text-slate-900'
             }`}>
-              Control Center
+              {t('controlCenter')}
             </h2>
             <p className={`text-sm ${
               darkMode ? 'text-slate-400' : 'text-slate-600'
             }`}>
-              Breakdown Assistance Dashboard
+              {t('breakdownDashboard')}
             </p>
           </div>
           
@@ -445,7 +693,7 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
               type="text"
               placeholder="Search..."
               value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
+              onChange={(e) => onSearchChange(e.target.value)}
               className={`w-64 pl-10 pr-4 py-2 border rounded-lg text-sm ${
                 darkMode 
                   ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400' 
@@ -479,11 +727,14 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
               {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
             
-            <button className={`p-2 rounded-lg transition-colors relative ${
-              darkMode 
-                ? 'hover:bg-slate-700 text-slate-400 hover:text-white' 
-                : 'hover:bg-gray-100 text-slate-600 hover:text-slate-900'
-            }`}>
+            <button 
+              onClick={onOpenNotifications}
+              className={`p-2 rounded-lg transition-colors relative ${
+                darkMode 
+                  ? 'hover:bg-slate-700 text-slate-400 hover:text-white' 
+                  : 'hover:bg-gray-100 text-slate-600 hover:text-slate-900'
+              }`}
+            >
               <Bell className="w-5 h-5" />
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full flex items-center justify-center text-white text-xs">
                 3
@@ -496,15 +747,19 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
             <div className="text-right">
               <p className={`text-sm font-medium ${
                 darkMode ? 'text-white' : 'text-slate-900'
-              }`}>Admin</p>
+              }`}>{displayName}</p>
               <p className={`text-xs ${
                 darkMode ? 'text-slate-400' : 'text-slate-500'
-              }`}>Supervisor</p>
+              }`}>{t('supervisor')}</p>
             </div>
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm font-medium" style={{
+            <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center text-white text-sm font-medium" style={{
               backgroundColor: colors.dark
             }}>
-              AD
+              {avatarImage ? (
+                <img src={avatarImage} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                displayName.split(' ').map(n => n[0]).join('').toUpperCase()
+              )}
             </div>
             
             {/* Logout Button */}
@@ -513,7 +768,7 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
               className="px-4 py-2 rounded-lg border border-white/30 text-white hover:bg-white/10 transition-all duration-300 hover:scale-105 hover:border-blue-300 hover:shadow-lg hover:shadow-blue-300/20" 
               style={{ backgroundColor: colors.dark }}
             > 
-              Logout
+              {t('logout')}
             </button>
           </div>
         </div>
@@ -530,21 +785,23 @@ const DashboardNavbar = ({ darkMode, setDarkMode, onRefresh, isLoading, lastRefr
   );
 };
 
-const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) => {
+const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection, onNewRequest, onExportData }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   
   const menuItems = [
-    { id: 'dashboard', icon: BarChart3, label: 'Dashboard', badge: null, path: null },
-    { id: 'requests', icon: AlertTriangle, label: 'Requests', badge: '8', path: '/pages/requestmanagement' },
-    { id: 'drivers', icon: Users, label: 'Drivers', badge: '24', path: '/pages/drivermanagement' },
+    { id: 'dashboard', icon: BarChart3, label: 'Dashboard', badge: null, path: '/pages/breakdownadmindashboard' },
+    { id: 'requests', icon: AlertTriangle, label: 'Requests', badge: '8', path: '/pages/requestManagement' },
+    { id: 'drivers', icon: Users, label: 'Drivers', badge: '24', path: '/pages/driverManagement' },
     { id: 'map', icon: Map, label: 'Live Map', badge: null, path: null },
-    { id: 'analytics', icon: TrendingUp, label: 'Analytics', badge: null, path: null },
-    { id: 'fleet', icon: Truck, label: 'Fleet', badge: null, path: null },
-    { id: 'profil', icon: UserCheck, label: 'Profil', badge: null, path: null },
-    { id: 'setting', icon: Settings, label: 'Settings', badge: null, path: null },
+    { id: 'Trucks', icon: Truck, label: 'Trucks', badge: null, path: '/pages/truckManagement' },
+    { id: 'profil', icon: UserCheck, label: 'Profil', badge: null, path: '/pages/profil' },
+    { id: 'setting', icon: Settings, label: 'Settings', badge: null, path: '/pages/settings' },
   ];
 
   const handleMenuClick = (item) => {
+    // Set active section for all items
+    setActiveSection(item.id);
+    
     if (item.path) {
       // Navigate to external route
       navigateToPage(item.path);
@@ -606,11 +863,11 @@ const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) =
               key={item.id}
               onClick={() => handleMenuClick(item)}
               className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                activeSection === item.id && !item.path
+                activeSection === item.id
                   ? 'text-white shadow-sm' 
                   : `${darkMode ? 'text-slate-300 hover:bg-slate-700 hover:text-white' : 'text-slate-700 hover:bg-gray-100'}`
               }`}
-              style={activeSection === item.id && !item.path ? { backgroundColor: colors.dark } : {}}
+              style={activeSection === item.id ? { backgroundColor: colors.dark } : {}}
               title={isCollapsed ? item.label : ''}
             >
               <div className="flex items-center">
@@ -619,7 +876,7 @@ const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) =
               </div>
               {!isCollapsed && item.badge && (
                 <span className={`px-2 py-0.5 text-xs rounded-full ${
-                  activeSection === item.id && !item.path
+                  activeSection === item.id
                     ? 'bg-white/20 text-white' 
                     : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
                 }`}>
@@ -642,13 +899,13 @@ const Sidebar = ({ activeSection, setActiveSection, darkMode, switchSection }) =
               Quick Actions
             </p>
             <div className="space-y-1">
-              <button className={`w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+              <button onClick={onNewRequest} className={`w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
                 darkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-700 hover:bg-gray-100'
               }`}>
                 <Plus className="w-5 h-5 mr-3" />
                 New Request
               </button>
-              <button className={`w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+              <button onClick={onExportData} className={`w-full flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
                 darkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-700 hover:bg-gray-100'
               }`}>
                 <Download className="w-5 h-5 mr-3" />
@@ -843,10 +1100,19 @@ const RequestCard = ({ request, darkMode, index }) => {
             }`}>{request.time}</span>
           </div>
           <div className="flex space-x-1">
-            <button className="p-1 rounded text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20">
+            <button
+              onClick={() => window.open('tel:+212000000000')}
+              className="p-1 rounded text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+            >
               <Phone className="w-3 h-3" />
             </button>
-            <button className="p-1 rounded text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20">
+            <button
+              onClick={() => {
+                const q = encodeURIComponent(`${request.location}`);
+                window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, '_blank');
+              }}
+              className="p-1 rounded text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20"
+            >
               <Navigation className="w-3 h-3" />
             </button>
           </div>
@@ -927,12 +1193,65 @@ const DriverCard = ({ driver, darkMode, index }) => {
 
 // Main Dashboard Component
 export default function BreakdownAdminDashboard() {
+  const { admin } = useAuth();
   const [activeSection, setActiveSection] = useState('dashboard');
-
   const [darkMode, setDarkMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [mapFullscreen, setMapFullscreen] = useState(false);
+  const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
+  const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
+  const [newRequestForm, setNewRequestForm] = useState({
+    customer: '',
+    location: '',
+    type: 'Engine Failure',
+    status: 'pending'
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Load persisted theme on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('appSettings');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const theme = parsed?.appearance?.theme || 'auto';
+        if (theme === 'auto') {
+          const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          setDarkMode(prefersDark);
+        } else {
+          setDarkMode(theme === 'dark');
+        }
+      }
+    } catch {}
+    const onStorage = (e) => {
+      if (e.key === 'appSettings' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          const theme = parsed?.appearance?.theme || 'auto';
+          if (theme === 'auto') {
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            setDarkMode(prefersDark);
+          } else {
+            setDarkMode(theme === 'dark');
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // Handle cross-page request to open the Live Map section
+  useEffect(() => {
+    try {
+      const openMap = localStorage.getItem('openMapSection');
+      if (openMap === 'true') {
+        setActiveSection('map');
+        localStorage.removeItem('openMapSection');
+      }
+    } catch {}
+  }, []);
 
   const chartData = [
     { label: 'Mon', value: 45 },
@@ -1013,6 +1332,57 @@ export default function BreakdownAdminDashboard() {
       location: 'Base Station'
     },
   ]);
+
+  const handleNewRequest = () => {
+    setIsNewRequestOpen(true);
+  };
+
+  const handleExportData = () => {
+    try {
+      const headers = ['ID','Customer','Location','Time','Status','Type'];
+      const rows = requests.map(r => [r.id, r.customer, r.location, r.time, r.status, r.type]);
+      const csvContent = [headers, ...rows]
+        .map(row => row.map(value => {
+          const cell = String(value ?? '');
+          if (/[",\n]/.test(cell)) {
+            return '"' + cell.replace(/"/g, '""') + '"';
+          }
+          return cell;
+        }).join(','))
+        .join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dateStr = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+      link.download = `requests-export-${dateStr}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Export failed:', e);
+      alert('Failed to export data.');
+    }
+  };
+
+  const handleCreateRequest = () => {
+    const { customer, location, type, status } = newRequestForm;
+    if (!customer.trim() || !location.trim()) {
+      alert('Please fill customer and location');
+      return;
+    }
+    const nextId = (requests.reduce((maxId, r) => Math.max(maxId, Number(r.id) || 0), 0) || 0) + 1;
+    const now = new Date();
+    const time = `${now.getHours()}h${String(now.getMinutes()).padStart(2,'0')}`;
+    setRequests(prev => [
+      { id: nextId, customer: customer.trim(), location: location.trim(), time, status, type },
+      ...prev
+    ]);
+    setIsNewRequestOpen(false);
+    setNewRequestForm({ customer: '', location: '', type: 'Engine Failure', status: 'pending' });
+  };
 
   const handleRefresh = async () => {
     setIsLoading(true);
@@ -1189,7 +1559,18 @@ export default function BreakdownAdminDashboard() {
             </div>
             
             <div className="space-y-3">
-              {requests.map((request, index) => (
+              {requests
+                .filter((r) => {
+                  if (!searchQuery) return true;
+                  const q = searchQuery.toLowerCase();
+                  return (
+                    r.customer.toLowerCase().includes(q) ||
+                    r.location.toLowerCase().includes(q) ||
+                    r.type.toLowerCase().includes(q) ||
+                    r.status.toLowerCase().includes(q)
+                  );
+                })
+                .map((request, index) => (
                 <RequestCard 
                   key={request.id} 
                   request={request} 
@@ -1278,6 +1659,8 @@ export default function BreakdownAdminDashboard() {
           setActiveSection={setActiveSection}
           darkMode={darkMode}
           switchSection={switchSection}
+          onNewRequest={handleNewRequest}
+          onExportData={handleExportData}
         />
         
         <div className="flex-1">
@@ -1287,6 +1670,10 @@ export default function BreakdownAdminDashboard() {
             onRefresh={handleRefresh}
             isLoading={isLoading}
             lastRefresh={lastRefresh}
+            admin={admin}
+            onOpenNotifications={() => setIsNotificationPanelOpen(true)}
+            searchValue={searchQuery}
+            onSearchChange={setSearchQuery}
           />
           
           <div className="p-6">
@@ -1295,14 +1682,55 @@ export default function BreakdownAdminDashboard() {
         </div>
       </div>
       
-      {/* Floating Action Button */}
-      <div className="fixed bottom-6 right-6 z-30">
-        <button className="w-12 h-12 rounded-lg shadow-lg flex items-center justify-center text-white hover:shadow-xl transition-shadow" style={{
-          backgroundColor: colors.dark
-        }}>
-          <Plus className="w-5 h-5" />
-        </button>
-      </div>
+      {/* New Request Modal */}
+      {isNewRequestOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className={`${darkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900'} w-full max-w-md rounded-xl p-6 shadow-xl`}>
+            <h3 className="text-lg font-semibold mb-4">Create New Request</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm mb-1 block">Customer</label>
+                <input value={newRequestForm.customer} onChange={(e)=>setNewRequestForm(v=>({...v, customer:e.target.value}))} className={`w-full px-3 py-2 rounded border ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'}`} />
+              </div>
+              <div>
+                <label className="text-sm mb-1 block">Location</label>
+                <input value={newRequestForm.location} onChange={(e)=>setNewRequestForm(v=>({...v, location:e.target.value}))} className={`w-full px-3 py-2 rounded border ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'}`} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm mb-1 block">Type</label>
+                  <select value={newRequestForm.type} onChange={(e)=>setNewRequestForm(v=>({...v, type:e.target.value}))} className={`w-full px-3 py-2 rounded border ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'}`}>
+                    <option>Engine Failure</option>
+                    <option>Flat Tire</option>
+                    <option>Battery Dead</option>
+                    <option>Fuel Empty</option>
+                    <option>Overheating</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm mb-1 block">Status</label>
+                  <select value={newRequestForm.status} onChange={(e)=>setNewRequestForm(v=>({...v, status:e.target.value}))} className={`w-full px-3 py-2 rounded border ${darkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-gray-300'}`}>
+                    <option>pending</option>
+                    <option>urgent</option>
+                    <option>assigned</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={()=>setIsNewRequestOpen(false)} className={`px-4 py-2 rounded ${darkMode ? 'bg-slate-700 text-white' : 'bg-gray-200 text-slate-700'}`}>Cancel</button>
+              <button onClick={handleCreateRequest} className="px-4 py-2 rounded text-white" style={{ backgroundColor: colors.dark }}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification Panel */}
+      <NotificationPanel 
+        isOpen={isNotificationPanelOpen}
+        onClose={() => setIsNotificationPanelOpen(false)}
+        darkMode={darkMode}
+      />
     </DashboardLayout>
   );
 }

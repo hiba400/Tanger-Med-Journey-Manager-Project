@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { authAPI } from '../services/api';
 
 export default function AuthPage({ onLoginSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -11,11 +13,13 @@ export default function AuthPage({ onLoginSuccess }) {
   const [isPageLoaded, setIsPageLoaded] = useState(false);
   const [fieldFocus, setFieldFocus] = useState({});
   const [typingFields, setTypingFields] = useState({});
+  const { login } = useAuth();
   
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     companyCode: '',
+    phone: '',
     email: '',
     password: '',
     confirmPassword: ''
@@ -51,7 +55,7 @@ export default function AuthPage({ onLoginSuccess }) {
     setFieldFocus(prev => ({ ...prev, [field]: false }));
   }, []);
 
-  const handleSubmit = useCallback((e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     if (isLogin) {
       console.log('Login attempt:', {
@@ -59,11 +63,91 @@ export default function AuthPage({ onLoginSuccess }) {
         password: formData.password,
         rememberMe
       });
-      onLoginSuccess && onLoginSuccess(); 
+      
+      try {
+        // Use Axios API service for login
+        const data = await authAPI.login(formData.email, formData.password);
+
+        if (data.success) {
+          console.log('Admin login successful:', data);
+          
+          // Use AuthContext to login
+          login(data.admin, rememberMe);
+          
+          // Redirect to admin dashboard
+          navigate('/pages/breakdownadmindashboard');
+          
+          // Call onLoginSuccess if provided
+          onLoginSuccess && onLoginSuccess();
+        } else {
+          console.error('Login failed:', data.error);
+          alert(data.error || 'Login failed. Please check your credentials.');
+        }
+      } catch (error) {
+        console.error('Error during login:', error);
+        alert(error.response?.data?.error || 'Network error. Please try again.');
+      }
     } else {
       console.log('Registration attempt:', formData);
+      
+      // Validate registration data
+      if (!formData.firstName || !formData.lastName || !formData.email || !formData.password || !formData.confirmPassword || !formData.phone) {
+        alert('Please fill in all fields');
+        return;
+      }
+      
+      if (formData.password !== formData.confirmPassword) {
+        alert('Passwords do not match');
+        return;
+      }
+      
+      // Validate company code
+      if (formData.companyCode !== 'tangermed2') {
+        alert('Invalid company code.');
+        return;
+      }
+      
+      // Validate phone number format (Moroccan format)
+      const phoneRegex = /^0[5-7]\d{8}$/;
+      if (!phoneRegex.test(formData.phone)) {
+        alert('Please enter a valid Moroccan phone number (e.g., 0500000000, 0600000000, 0700000000)');
+        return;
+      }
+      
+      try {
+        // Use Axios API service for registration
+        const data = await authAPI.register({
+          name: `${formData.firstName} ${formData.lastName}`,
+          email: formData.email,
+          password: formData.password,
+          phone: formData.phone
+        });
+
+        if (data.success) {
+          console.log('Admin registration successful:', data);
+          alert('Registration successful! Please login with your credentials.');
+          
+          // Switch back to login mode
+          setIsLogin(true);
+          setFormData({
+            firstName: '',
+            lastName: '',
+            companyCode: '',
+            phone: '',
+            email: '',
+            password: '',
+            confirmPassword: ''
+          });
+        } else {
+          console.error('Registration failed:', data.error);
+          alert(data.error || 'Registration failed. Please try again.');
+        }
+      } catch (error) {
+        console.error('Error during registration:', error);
+        alert(error.response?.data?.error || 'Network error. Please try again.');
+      }
     }
-  }, [isLogin, formData, rememberMe, onLoginSuccess]);
+  }, [isLogin, formData, rememberMe, onLoginSuccess, navigate, login]);
 
   const switchMode = useCallback(() => {
     setIsLogin(!isLogin);
@@ -71,6 +155,7 @@ export default function AuthPage({ onLoginSuccess }) {
       firstName: '',
       lastName: '',
       companyCode: '',
+      phone: '',
       email: '',
       password: '',
       confirmPassword: ''
@@ -173,6 +258,16 @@ export default function AuthPage({ onLoginSuccess }) {
                     onFocus={() => handleFocus('companyCode')}
                     onBlur={() => handleBlur('companyCode')}
                     className={getInputClasses('companyCode')}
+                    style={{ fontFamily: 'Poppins, sans-serif' }}
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Phone Number"
+                    value={formData.phone}
+                    onChange={(e) => handleInputChange('phone', e.target.value)}
+                    onFocus={() => handleFocus('phone')}
+                    onBlur={() => handleBlur('phone')}
+                    className={getInputClasses('phone')}
                     style={{ fontFamily: 'Poppins, sans-serif' }}
                   />
                 </div>

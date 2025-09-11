@@ -6,6 +6,10 @@ const truckSchema = new mongoose.Schema({
     type: String,
     enum: ['available', 'in transit', 'maintenance', 'broken'],
     default: 'available'
+  },
+  driver: {
+    type: String,
+    default: null
   }
 });
 
