@@ -3,11 +3,18 @@ const router = express.Router();
 const Admin = require('../models/admin'); // make sure this path is correct
 const { authenticateAdmin } = require('../utils/adminAuth');
 const memoryDB = require('../utils/memoryDB');
+const { hashPassword, comparePassword } = require('../utils/passwordUtils');
+const { body, validationResult } = require('express-validator');
 
 // POST admin login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    
+    // Input validation
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
     
     let admin;
     
@@ -23,8 +30,9 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
     
-    // Check password (in production, use bcrypt to compare hashed passwords)
-    if (admin.password !== password) {
+    // Check password using bcrypt comparison
+    const isPasswordValid = await comparePassword(password, admin.password);
+    if (!isPasswordValid) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
     
@@ -52,17 +60,29 @@ router.post('/register', async (req, res) => {
   try {
     const { name, email, password, phone } = req.body;
     
+    // Input validation
+    if (!name || !email || !password || !phone) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+    
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+    
     // Check if admin already exists with this email
     const existingAdmin = await Admin.findOne({ email: email });
     if (existingAdmin) {
       return res.status(400).json({ error: 'Admin with this email already exists' });
     }
     
-    // Create new admin
+    // Hash password before saving
+    const hashedPassword = await hashPassword(password);
+    
+    // Create new admin with hashed password
     const newAdmin = new Admin({
       name,
       email,
-      password,
+      password: hashedPassword,
       phone
     });
     
@@ -138,20 +158,24 @@ router.patch('/change-password', authenticateAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Admin not found' });
     }
     
-    // Verify current password
-    if (admin.password !== currentPassword) {
+    // Verify current password using bcrypt
+    const isPasswordValid = await comparePassword(currentPassword, admin.password);
+    if (!isPasswordValid) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
+    
+    // Hash new password before updating
+    const hashedNewPassword = await hashPassword(newPassword);
     
     // Update password
     try {
       if (admin.save) {
         // MongoDB document
-        admin.password = newPassword;
+        admin.password = hashedNewPassword;
         await admin.save();
       } else {
         // Memory DB document
-        await memoryDB.updateOne('admins', { _id: req.admin.id }, { password: newPassword });
+        await memoryDB.updateOne('admins', { _id: req.admin.id }, { password: hashedNewPassword });
       }
     } catch (updateError) {
       console.error('Error updating password:', updateError);
@@ -195,21 +219,25 @@ router.patch('/change-password-test', async (req, res) => {
       return res.status(404).json({ error: 'Admin not found with this email' });
     }
     
-    // Verify current password
-    if (admin.password !== currentPassword) {
+    // Verify current password using bcrypt
+    const isPasswordValid = await comparePassword(currentPassword, admin.password);
+    if (!isPasswordValid) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
+    
+    // Hash new password before updating
+    const hashedNewPassword = await hashPassword(newPassword);
     
     // Update password
     try {
       if (admin.save) {
         // MongoDB document
-        admin.password = newPassword;
+        admin.password = hashedNewPassword;
         await admin.save();
         console.log('✅ Password updated in MongoDB');
       } else {
         // Memory DB document
-        await memoryDB.updateOne('admins', { email: email }, { password: newPassword });
+        await memoryDB.updateOne('admins', { email: email }, { password: hashedNewPassword });
         console.log('✅ Password updated in Memory DB');
       }
     } catch (updateError) {
