@@ -27,7 +27,7 @@ app.use('/admin', adminRoutes);
 app.use('/passenger', passengerRoutes);
 
 // MongoDB Atlas connection URI
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://salmakhayari69:9BK0YBIWHdDdgdEz@cluster0.3qvh78c.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+const MONGODB_URI = process.env.MONGODB_URI;
 
 // Connect to MongoDB Atlas
 mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
